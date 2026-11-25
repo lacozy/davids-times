@@ -17,6 +17,7 @@ local util = require("util")
 local _ = require("gettext")
 
 local SETTING_BASE_URL = "davidtimes_base_url"
+local SETTING_SAVE_DIR = "davidtimes_save_dir"
 local SETTING_AUTO_PULL = "davidtimes_auto_pull"
 local SETTING_FORCE_DAY = "davidtimes_force_day_mode"
 local SETTING_LAST_DATE = "davidtimes_last_downloaded_date"
@@ -39,6 +40,10 @@ function DavidTimes:init()
     pcall(function()
         self:onDispatcherRegisterActions()
     end)
+    -- Also auto-check on fresh KOReader startup (not just wake/Wi-Fi reconnect)
+    pcall(function()
+        self:scheduleAutoPull()
+    end)
 end
 
 function DavidTimes:onDispatcherRegisterActions()
@@ -51,6 +56,12 @@ function DavidTimes:onDispatcherRegisterActions()
 end
 
 function DavidTimes:getSaveDir()
+    local custom = G_reader_settings:readSetting(SETTING_SAVE_DIR)
+    if custom and custom ~= "" then
+        util.makePath(custom)
+        return custom
+    end
+    -- If the user set a KOReader Home folder, default to saving there if it exists; else /mnt/us/documents/DavidTimes
     if lfs.attributes("/mnt/us/documents", "mode") == "directory" then
         util.makePath(DEFAULT_SAVE_DIR)
         return DEFAULT_SAVE_DIR
@@ -58,6 +69,30 @@ function DavidTimes:getSaveDir()
     local fallback = DataStorage:getDataDir() .. "/DavidTimes"
     util.makePath(fallback)
     return fallback
+end
+
+function DavidTimes:chooseSaveDir()
+    local ok, PathChooser = pcall(require, "ui/widget/pathchooser")
+    if not ok or not PathChooser then
+        return
+    end
+    local chooser = PathChooser:new{
+        select_directory = true,
+        select_file = false,
+        show_files = false,
+        path = self:getSaveDir(),
+        onConfirm = function(dir_path)
+            if dir_path and dir_path ~= "" then
+                dir_path = dir_path:gsub("/+$", "")
+                G_reader_settings:saveSetting(SETTING_SAVE_DIR, dir_path)
+                UIManager:show(InfoMessage:new{
+                    text = _("Download folder set to:\n") .. dir_path,
+                    timeout = 3,
+                })
+            end
+        end,
+    }
+    UIManager:show(chooser)
 end
 
 function DavidTimes:getBaseUrl()
@@ -270,6 +305,13 @@ function DavidTimes:fetchLatest(open_after, silent)
             end
             G_reader_settings:saveSetting(SETTING_LAST_DATE, meta.date_iso or os.date("%Y-%m-%d"))
             self:pruneOldIssues()
+            -- Refresh File Browser immediately so the newly downloaded PDF shows up in the folder!
+            pcall(function()
+                local FileManager = require("apps/filemanager/filemanager")
+                if FileManager.instance then
+                    FileManager.instance:onRefresh()
+                end
+            end)
         end
 
         if notice then UIManager:close(notice) end
@@ -348,6 +390,12 @@ function DavidTimes:addToMainMenu(menu_items)
                 end,
                 callback = function()
                     G_reader_settings:toggle(SETTING_FORCE_DAY)
+                end,
+            },
+            {
+                text = _("Set download folder…"),
+                callback = function()
+                    self:chooseSaveDir()
                 end,
             },
             {
