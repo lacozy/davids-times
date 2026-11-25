@@ -2,8 +2,10 @@ name: Daily Kindle Newspaper
 
 on:
   schedule:
-    # Runs daily at 5:30 AM PST / 6:30 AM PDT (13:30 UTC)
-    - cron: "30 13 * * *"
+    # Off-peak minutes avoid GitHub Actions' :00/:30 cron congestion.
+    # Primary: 5:17 AM PST / 6:17 AM PDT; Backup: 5:47 AM PST / 6:47 AM PDT (skips if already built today).
+    - cron: "17 13 * * *"
+    - cron: "47 13 * * *"
   workflow_dispatch:
 
 permissions:
@@ -31,14 +33,23 @@ jobs:
         run: playwright install chromium --with-deps
 
       - name: Restore rolling 14-day archive from gh-pages (if present)
+        id: archive
         run: |
           mkdir -p dist/issues
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
             git fetch origin gh-pages --depth=1
             git archive origin/gh-pages issues 2>/dev/null | tar -x -C dist || true
           fi
+          TODAY_PT=$(TZ="America/Los_Angeles" date +%Y-%m-%d)
+          if [ "${{ github.event_name }}" = "schedule" ] && [ -f "dist/issues/${TODAY_PT}-The-David-Times.pdf" ]; then
+            echo "Today's issue (${TODAY_PT}) is already published — skipping duplicate backup cron."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Generate The David Times PDF & OPDS catalog
+        if: steps.archive.outputs.skip != 'true'
         run: |
           BASE_URL="https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}"
           python -m src.main \
@@ -48,6 +59,7 @@ jobs:
             --base-url "$BASE_URL"
 
       - name: Upload PDF as workflow artifact
+        if: steps.archive.outputs.skip != 'true'
         uses: actions/upload-artifact@v4
         with:
           name: the-david-times-latest
@@ -55,6 +67,7 @@ jobs:
           retention-days: 7
 
       - name: Deploy to GitHub Pages (gh-pages branch)
+        if: steps.archive.outputs.skip != 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
