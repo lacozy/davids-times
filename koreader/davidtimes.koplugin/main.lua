@@ -1,6 +1,6 @@
-local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local Dispatcher = require("dispatcher")
+local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
 local NetworkMgr = require("ui/network/manager")
@@ -11,7 +11,6 @@ local json = require("json")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local ltn12 = require("ltn12")
-local socket = require("socket")
 local http = require("socket.http")
 local https = require("ssl.https")
 local socketutil = require("socketutil")
@@ -20,9 +19,11 @@ local _ = require("gettext")
 
 local SETTING_BASE_URL = "davidtimes_base_url"
 local SETTING_AUTO_PULL = "davidtimes_auto_pull"
+local SETTING_FORCE_DAY = "davidtimes_force_day_mode"
 local SETTING_LAST_DATE = "davidtimes_last_downloaded_date"
 local DEFAULT_BASE_URL = "https://lacozy.github.io/davids-times"
 local DEFAULT_SAVE_DIR = "/mnt/us/documents/DavidTimes"
+local MAX_LOCAL_ISSUES = 14
 
 local DavidTimes = WidgetContainer:extend{
     name = "davidtimes",
@@ -30,6 +31,10 @@ local DavidTimes = WidgetContainer:extend{
 }
 
 function DavidTimes:init()
+    -- Default Force Day Mode to ON so the newspaper never opens inverted
+    if G_reader_settings:readSetting(SETTING_FORCE_DAY) == nil then
+        G_reader_settings:saveSetting(SETTING_FORCE_DAY, true)
+    end
     self.ui.menu:registerToMainMenu(self)
     self:onDispatcherRegisterActions()
 end
@@ -44,7 +49,6 @@ function DavidTimes:onDispatcherRegisterActions()
 end
 
 function DavidTimes:getSaveDir()
-    -- Prefer Kindle documents folder if present, otherwise KOReader home dir
     if lfs.attributes("/mnt/us/documents", "mode") == "directory" then
         util.makePath(DEFAULT_SAVE_DIR)
         return DEFAULT_SAVE_DIR
@@ -63,6 +67,37 @@ function DavidTimes:getBaseUrl()
     return url
 end
 
+function DavidTimes:ensureDayModeIfEnabled()
+    if not G_reader_settings:isTrue(SETTING_FORCE_DAY) then
+        return
+    end
+    if G_reader_settings:isTrue("night_mode") then
+        UIManager:broadcastEvent(Event:new("ToggleNightMode"))
+    end
+end
+
+function DavidTimes:onReaderReady()
+    -- Whenever any The-David-Times PDF opens, automatically switch off Night Mode if enabled
+    local doc_path = self.ui and self.ui.document and self.ui.document.file or ""
+    if doc_path:find("David%-Times") or doc_path:find("DavidTimes") or doc_path:find("latest%.pdf") then
+        self:ensureDayModeIfEnabled()
+    end
+end
+
+function DavidTimes:pruneOldIssues()
+    local save_dir = self:getSaveDir()
+    local files = {}
+    for entry in lfs.dir(save_dir) do
+        if entry:match("%.pdf$") then
+            table.insert(files, entry)
+        end
+    end
+    table.sort(files, function(a, b) return a > b end)
+    for i = MAX_LOCAL_ISSUES + 1, #files do
+        os.remove(save_dir .. "/" .. files[i])
+    end
+end
+
 function DavidTimes:httpGet(url, sink_fn, redirects)
     redirects = redirects or 0
     if redirects > 5 then
@@ -78,7 +113,7 @@ function DavidTimes:httpGet(url, sink_fn, redirects)
         method = "GET",
         sink = sink_fn,
         headers = {
-            ["User-Agent"] = "KOReader-DavidTimes/1.0",
+            ["User-Agent"] = "KOReader-DavidTimes/1.1",
         },
     }
     socketutil:reset_timeout()
@@ -142,7 +177,7 @@ function DavidTimes:promptForBaseUrl(on_saved)
     dialog = InputDialog:new{
         title = _("The David Times — Base URL"),
         input = self:getBaseUrl(),
-        input_hint = "https://YOUR-USERNAME.github.io/davids-times",
+        input_hint = DEFAULT_BASE_URL,
         description = _("Enter your GitHub Pages URL (without trailing slash)."),
         buttons = {
             {
@@ -221,12 +256,14 @@ function DavidTimes:fetchLatest(open_after, silent)
                 logger.warn("DavidTimes: PDF download error:", dl_err)
                 return
             end
-            G_reader_settings:saveSetting(SETTING_LAST_DATE, meta.date_iso or "")
+            G_reader_settings:saveSetting(SETTING_LAST_DATE, meta.date_iso or os.date("%Y-%m-%d"))
+            self:pruneOldIssues()
         end
 
         if notice then UIManager:close(notice) end
 
         if open_after then
+            self:ensureDayModeIfEnabled()
             ReaderUI:showReader(dest_path)
         elseif not already_exists then
             UIManager:show(InfoMessage:new{
@@ -245,12 +282,7 @@ function DavidTimes:fetchLatest(open_after, silent)
     end
 end
 
-function DavidTimes:onDavidTimesFetchToday()
-    self:fetchLatest(true, false)
-    return true
-end
-
-function DavidTimes:onNetworkConnected()
+function DavidTimes:scheduleAutoPull()
     if not G_reader_settings:isTrue(SETTING_AUTO_PULL) then
         return
     end
@@ -258,10 +290,25 @@ function DavidTimes:onNetworkConnected()
     if G_reader_settings:readSetting(SETTING_LAST_DATE) == today then
         return
     end
-    -- Wait 3 seconds for DNS/TLS to settle after Wi-Fi wakes up
-    UIManager:scheduleIn(3, function()
-        self:fetchLatest(false, true)
+    -- Wait 4 seconds for Wi-Fi + DNS/TLS to settle after wake
+    UIManager:scheduleIn(4, function()
+        if NetworkMgr:isConnected() then
+            self:fetchLatest(false, true)
+        end
     end)
+end
+
+function DavidTimes:onDavidTimesFetchToday()
+    self:fetchLatest(true, false)
+    return true
+end
+
+function DavidTimes:onNetworkConnected()
+    self:scheduleAutoPull()
+end
+
+function DavidTimes:onResume()
+    self:scheduleAutoPull()
 end
 
 function DavidTimes:addToMainMenu(menu_items)
@@ -276,12 +323,21 @@ function DavidTimes:addToMainMenu(menu_items)
                 end,
             },
             {
-                text = _("Auto-download when Wi-Fi connects"),
+                text = _("Auto-download when Kindle wakes on Wi-Fi"),
                 checked_func = function()
                     return G_reader_settings:isTrue(SETTING_AUTO_PULL)
                 end,
                 callback = function()
                     G_reader_settings:toggle(SETTING_AUTO_PULL)
+                end,
+            },
+            {
+                text = _("Always open in Day Mode (disable Night Mode)"),
+                checked_func = function()
+                    return G_reader_settings:isTrue(SETTING_FORCE_DAY)
+                end,
+                callback = function()
+                    G_reader_settings:toggle(SETTING_FORCE_DAY)
                 end,
             },
             {
