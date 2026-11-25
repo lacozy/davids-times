@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:opds="http://opds-spec.org/2010/catalog">
+  <id>urn:davids-times:catalog</id>
+  <title>The David Times</title>
+  <subtitle>All David’s News That’s Fit to Read</subtitle>
+  <updated>2026-11-25T03:50:21Z</updated>
+  <author><name>The David Times</name></author>
+  <link rel="self" href="https://lacozy.github.io/davids-times/opds.xml" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <link rel="start" href="https://lacozy.github.io/davids-times/opds.xml" type="application/atom+xml;profile=opds-catalog;kind=acquisition"/>
+  <entry>
+    <title>The David Times — 2026-11-24 (Latest)</title>
+    <id>urn:davids-times:issue:2026-11-24</id>
+    <updated>2026-11-25T03:50:21Z</updated>
+    <author><name>The David Times</name></author>
+    <summary>Tuesday, November 24, 2026 · 60 pages · 25 articles</summary>
+    <link rel="http://opds-spec.org/acquisition" href="https://lacozy.github.io/davids-times/issues/2026-11-24-The-David-Times.pdf" type="application/pdf" length="3725959"/>
+  </entry>
+</feed>
