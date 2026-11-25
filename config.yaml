@@ -1,0 +1,286 @@
+# The David Times — Personal Daily Kindle Newspaper Configuration
+# Pulls real front-page lead stories from BBC, CNN, NPR, SFGate, and major gaming desks,
+# ranked by editorial hero prominence + cross-outlet consensus (zero API keys required).
+
+paper:
+  title: "The David Times"
+  motto: "All David’s News That’s Fit to Read"
+  edition: "San Francisco Edition"
+  price_line: "Kindle Edition · Free"
+  start_date: "2026-11-24"       # Used to calculate Vol. / No. issue numbering
+  timezone: "America/Los_Angeles"
+
+device:
+  # 6.8"–7" Paperwhite (11th/12th gen) & Oasis have a 3:4 portrait aspect ratio.
+  # 108mm x 144mm matches the physical screen proportions at 300 PPI with crisp typography.
+  profile: "kindle_paperwhite_7"
+  page_width_mm: 108
+  page_height_mm: 144
+  margin_top_mm: 8.5
+  margin_bottom_mm: 8.5
+  margin_sides_mm: 6.0
+  grayscale_images: true
+  eink_contrast: 1.22
+  eink_sharpness: 1.35
+
+weather:
+  enabled: true
+  city: "San Francisco"
+  latitude: 37.7749
+  longitude: -122.4194
+  unit: "fahrenheit"             # "fahrenheit" or "celsius"
+
+markets:
+  enabled: true
+  movers_count: 5                # Top 5 gainers & top 5 losers
+  earnings_count: 7              # Top 7 largest-cap upcoming earnings
+  earnings_lookahead_days: 6
+
+# Front-page benchmark feeds used purely to detect cross-outlet breaking news consensus.
+# If CNN/BBC/NPR AND The New York Times front page are leading with the same story, it rockets to Page 1!
+consensus_feeds:
+  - name: "NYTimes"
+    url: "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"
+
+interests:
+  # Stories mentioning these words receive a ranking boost within their section.
+  boost_keywords:
+    - "san francisco"
+    - "bay area"
+    - "muni"
+    - "bart"
+    - "valve"
+    - "steam"
+    - "gta"
+    - "nintendo"
+    - "playstation"
+    - "xbox"
+    - "indie"
+    - "godot"
+    - "rpg"
+    - "fromsoftware"
+    - "zelda"
+    - "nvidia"
+    - "ai"
+    - "open source"
+    - "linux"
+    - "compiler"
+    - "rust"
+    - "python"
+    - "postgres"
+    - "hbo"
+    - "a24"
+    - "apple tv"
+    - "pixar"
+
+  # Stories matching these words are filtered out (keeps SEO spam, deals & fluff out of your paper).
+  mute_keywords:
+    - "wordle"
+    - "connections hints"
+    - "connections answers"
+    - "strands hints"
+    - "mini crossword"
+    - "quordle"
+    - "sponsored"
+    - "horoscope"
+    - "best deals"
+    - "promo code"
+    - "discount code"
+    - "gift guide"
+    - "black friday deal"
+    - "cyber monday deal"
+    - "where to buy"
+    - "how to watch"
+    - "what time does"
+    - "las vegas"
+    - "disneyland"
+
+limits:
+  max_age_hours: 48              # Prefer fresh news from the last 48 hours
+  max_article_words: 450         # Keep articles crisp & newspaper-length across 7 sections
+  front_lead_words: 310          # Keep Page 1 lead tight so Morning Briefing sits cleanly
+  min_article_words: 65          # Skip ultra-short stubs
+  briefing_items: 7              # One front-page "In Brief" highlight per section!
+  also_in_news_items: 10         # Back-page quick digest items
+  fetch_timeout_seconds: 12
+
+sections:
+  - id: "top_news"
+    title: "Top News"
+    subtitle: "Front Page · World & National"
+    max_articles: 4
+    max_per_source: 2
+    feeds:
+      - name: "CNN"
+        type: "cnn_home"         # Live CNN.com front-page hero stories
+        weight: 1.35
+      - name: "BBC News"
+        type: "bbc_home"         # Live BBC.com/news front-page hero stories
+        weight: 1.35
+      - name: "NPR"
+        type: "npr_home"         # Live NPR homepage top stories
+        weight: 1.20
+      - name: "PBS NewsHour"
+        type: "rss"
+        url: "https://www.pbs.org/newshour/feeds/rss/headlines"
+        weight: 1.05
+
+  - id: "san_francisco"
+    title: "San Francisco"
+    subtitle: "Bay Area & City Desk"
+    max_articles: 4
+    max_per_source: 2
+    feeds:
+      - name: "SFGate"
+        type: "sfgate_home"      # Live SFGate.com homepage top Bay Area stories
+        weight: 1.40
+      - name: "KQED News"
+        type: "rss"
+        url: "https://ww2.kqed.org/news/feed/"
+        weight: 1.25
+      - name: "Mission Local"
+        type: "rss"
+        url: "https://missionlocal.org/feed/"
+        weight: 1.25
+      - name: "The SF Standard"
+        type: "rss"
+        url: "https://sfstandard.com/feed/"
+        weight: 1.20
+      - name: "SFist"
+        type: "rss"
+        url: "https://sfist.com/rss/"
+        weight: 1.00
+
+  - id: "gaming"
+    title: "Gaming"
+    subtitle: "Interactive & Play"
+    max_articles: 4
+    max_per_source: 2
+    feeds:
+      - name: "Rock Paper Shotgun"
+        type: "rps_news"         # Live RockPaperShotgun.com/news top stories
+        weight: 1.30
+      - name: "VGC"
+        type: "rss"
+        url: "https://www.videogameschronicle.com/feed/"
+        weight: 1.25
+      - name: "IGN"
+        type: "rss"
+        url: "https://feeds.feedburner.com/ign/all"
+        weight: 1.20
+      - name: "Eurogamer"
+        type: "rss"
+        url: "https://www.eurogamer.net/feed"
+        weight: 1.20
+      - name: "PC Gamer"
+        type: "rss"
+        url: "https://www.pcgamer.com/rss/"
+        weight: 1.15
+      - name: "Kotaku"
+        type: "rss"
+        url: "https://kotaku.com/rss"
+        weight: 1.05
+      - name: "Gematsu"
+        type: "rss"
+        url: "https://www.gematsu.com/feed"
+        weight: 1.05
+      # Optional: Reddit r/Games & r/gaming RSS (skipped gracefully if Reddit rate-limits unauthenticated requests)
+      - name: "r/Games"
+        type: "reddit_rss"
+        url: "https://www.reddit.com/r/Games/top.rss?t=day"
+        weight: 1.20
+      - name: "r/gaming"
+        type: "reddit_rss"
+        url: "https://www.reddit.com/r/gaming/top.rss?t=day"
+        weight: 1.15
+
+  - id: "movies"
+    title: "Movies"
+    subtitle: "Cinema & Box Office"
+    max_articles: 3
+    max_per_source: 2
+    feeds:
+      - name: "Variety"
+        type: "rss"
+        url: "https://variety.com/v/film/feed/"
+        weight: 1.30
+      - name: "The Hollywood Reporter"
+        type: "rss"
+        url: "https://www.hollywoodreporter.com/c/movies/feed/"
+        weight: 1.30
+      - name: "Deadline"
+        type: "rss"
+        url: "https://deadline.com/v/film/feed/"
+        weight: 1.20
+      - name: "IndieWire"
+        type: "rss"
+        url: "https://www.indiewire.com/c/film/feed/"
+        weight: 1.15
+
+  - id: "television"
+    title: "Television"
+    subtitle: "Streaming & Series"
+    max_articles: 3
+    max_per_source: 2
+    feeds:
+      - name: "Variety"
+        type: "rss"
+        url: "https://variety.com/v/tv/feed/"
+        weight: 1.30
+      - name: "The Hollywood Reporter"
+        type: "rss"
+        url: "https://www.hollywoodreporter.com/c/tv/feed/"
+        weight: 1.30
+      - name: "Deadline"
+        type: "rss"
+        url: "https://deadline.com/v/tv/feed/"
+        weight: 1.20
+      - name: "TVLine"
+        type: "rss"
+        url: "https://tvline.com/feed/"
+        weight: 1.10
+
+  - id: "software_cs"
+    title: "Software & CS"
+    subtitle: "Engineering & Computing Culture"
+    max_articles: 4
+    max_per_source: 2
+    feeds:
+      - name: "Hacker News"
+        type: "hn_top"           # Live Hacker News front page (official API, zero auth)
+        weight: 1.35
+      - name: "Ars Technica"
+        type: "rss"
+        url: "https://feeds.arstechnica.com/arstechnica/technology-lab"
+        weight: 1.25
+      - name: "Lobste.rs"
+        type: "rss"
+        url: "https://lobste.rs/rss"
+        weight: 1.25
+      - name: "The Register"
+        type: "rss"
+        url: "https://www.theregister.com/software/headlines.atom"
+        weight: 1.15
+
+  - id: "markets"
+    title: "Markets"
+    subtitle: "Stocks, Movers & Earnings"
+    max_articles: 3
+    max_per_source: 2
+    feeds:
+      - name: "CNBC Markets"
+        type: "rss"
+        url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=15839069"
+        weight: 1.35
+      - name: "CNBC Finance"
+        type: "rss"
+        url: "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=10000664"
+        weight: 1.25
+      - name: "MarketWatch"
+        type: "rss"
+        url: "https://feeds.content.dowjones.io/public/rss/mw_topstories"
+        weight: 1.20
+      - name: "BBC Business"
+        type: "rss"
+        url: "https://feeds.bbci.co.uk/news/business/rss.xml"
+        weight: 1.05
