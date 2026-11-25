@@ -3,16 +3,15 @@ local Dispatcher = require("dispatcher")
 local Event = require("ui/event")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
+local JSON = require("json")
 local NetworkMgr = require("ui/network/manager")
-local ReaderUI = require("apps/reader/readerui")
 local UIManager = require("ui/uimanager")
 local WidgetContainer = require("ui/widget/container/widgetcontainer")
-local json = require("json")
+local http = require("socket.http")
 local lfs = require("libs/libkoreader-lfs")
 local logger = require("logger")
 local ltn12 = require("ltn12")
-local http = require("socket.http")
-local https = require("ssl.https")
+local socket = require("socket")
 local socketutil = require("socketutil")
 local util = require("util")
 local _ = require("gettext")
@@ -31,12 +30,15 @@ local DavidTimes = WidgetContainer:extend{
 }
 
 function DavidTimes:init()
-    -- Default Force Day Mode to ON so the newspaper never opens inverted
     if G_reader_settings:readSetting(SETTING_FORCE_DAY) == nil then
         G_reader_settings:saveSetting(SETTING_FORCE_DAY, true)
     end
-    self.ui.menu:registerToMainMenu(self)
-    self:onDispatcherRegisterActions()
+    if self.ui and self.ui.menu then
+        self.ui.menu:registerToMainMenu(self)
+    end
+    pcall(function()
+        self:onDispatcherRegisterActions()
+    end)
 end
 
 function DavidTimes:onDispatcherRegisterActions()
@@ -77,25 +79,28 @@ function DavidTimes:ensureDayModeIfEnabled()
 end
 
 function DavidTimes:onReaderReady()
-    -- Whenever any The-David-Times PDF opens, automatically switch off Night Mode if enabled
-    local doc_path = self.ui and self.ui.document and self.ui.document.file or ""
-    if doc_path:find("David%-Times") or doc_path:find("DavidTimes") or doc_path:find("latest%.pdf") then
-        self:ensureDayModeIfEnabled()
-    end
+    pcall(function()
+        local doc_path = self.ui and self.ui.document and self.ui.document.file or ""
+        if doc_path:find("David%-Times") or doc_path:find("DavidTimes") or doc_path:find("latest%.pdf") then
+            self:ensureDayModeIfEnabled()
+        end
+    end)
 end
 
 function DavidTimes:pruneOldIssues()
-    local save_dir = self:getSaveDir()
-    local files = {}
-    for entry in lfs.dir(save_dir) do
-        if entry:match("%.pdf$") then
-            table.insert(files, entry)
+    pcall(function()
+        local save_dir = self:getSaveDir()
+        local files = {}
+        for entry in lfs.dir(save_dir) do
+            if entry:match("%.pdf$") then
+                table.insert(files, entry)
+            end
         end
-    end
-    table.sort(files, function(a, b) return a > b end)
-    for i = MAX_LOCAL_ISSUES + 1, #files do
-        os.remove(save_dir .. "/" .. files[i])
-    end
+        table.sort(files, function(a, b) return a > b end)
+        for i = MAX_LOCAL_ISSUES + 1, #files do
+            os.remove(save_dir .. "/" .. files[i])
+        end
+    end)
 end
 
 function DavidTimes:httpGet(url, sink_fn, redirects)
@@ -104,34 +109,32 @@ function DavidTimes:httpGet(url, sink_fn, redirects)
         return nil, "Too many redirects"
     end
 
-    local is_https = url:sub(1, 8) == "https://"
-    local req_fn = is_https and https.request or http.request
+    -- In KOReader, socket.http transparently supports both HTTP and HTTPS.
     socketutil:set_timeout(socketutil.LARGE_BLOCK_TIMEOUT, socketutil.LARGE_TOTAL_TIMEOUT)
-
-    local ok, code, headers = req_fn{
+    local code, headers, status = socket.skip(1, http.request{
         url = url,
         method = "GET",
         sink = sink_fn,
         headers = {
-            ["User-Agent"] = "KOReader-DavidTimes/1.1",
+            ["User-Agent"] = "KOReader-DavidTimes/1.2",
         },
-    }
+    })
     socketutil:reset_timeout()
 
-    if not ok then
-        return nil, tostring(code or "network error")
+    local num_code = tonumber(code)
+    if not num_code then
+        return nil, tostring(code or status or "network error")
     end
 
-    code = tonumber(code)
-    if code and (code == 301 or code == 302 or code == 303 or code == 307 or code == 308) then
+    if num_code == 301 or num_code == 302 or num_code == 303 or num_code == 307 or num_code == 308 then
         local loc = headers and (headers["location"] or headers["Location"])
         if loc then
             return self:httpGet(loc, sink_fn, redirects + 1)
         end
     end
 
-    if code ~= 200 then
-        return nil, "HTTP " .. tostring(code)
+    if num_code ~= 200 then
+        return nil, "HTTP " .. tostring(num_code)
     end
     return true
 end
@@ -143,7 +146,7 @@ function DavidTimes:fetchJson(url)
         return nil, err
     end
     local raw = table.concat(chunks)
-    local parsed_ok, data = pcall(json.decode, raw)
+    local parsed_ok, data = pcall(JSON.decode, raw)
     if not parsed_ok or type(data) ~= "table" then
         return nil, "Invalid latest.json response"
     end
@@ -170,6 +173,15 @@ function DavidTimes:downloadToFile(url, dest_path)
         return nil, ren_err
     end
     return true
+end
+
+function DavidTimes:openDocument(dest_path)
+    self:ensureDayModeIfEnabled()
+    -- Lazy-require ReaderUI only when opening to avoid circular load during KOReader boot
+    local ok, ReaderUI = pcall(require, "apps/reader/readerui")
+    if ok and ReaderUI then
+        ReaderUI:showReader(dest_path)
+    end
 end
 
 function DavidTimes:promptForBaseUrl(on_saved)
@@ -263,8 +275,7 @@ function DavidTimes:fetchLatest(open_after, silent)
         if notice then UIManager:close(notice) end
 
         if open_after then
-            self:ensureDayModeIfEnabled()
-            ReaderUI:showReader(dest_path)
+            self:openDocument(dest_path)
         elseif not already_exists then
             UIManager:show(InfoMessage:new{
                 text = _("The David Times is ready!\n") .. (meta.date_display or filename),
@@ -275,7 +286,7 @@ function DavidTimes:fetchLatest(open_after, silent)
 
     if silent then
         if NetworkMgr:isConnected() then
-            do_fetch()
+            pcall(do_fetch)
         end
     else
         NetworkMgr:runWhenOnline(do_fetch)
@@ -290,7 +301,6 @@ function DavidTimes:scheduleAutoPull()
     if G_reader_settings:readSetting(SETTING_LAST_DATE) == today then
         return
     end
-    -- Wait 4 seconds for Wi-Fi + DNS/TLS to settle after wake
     UIManager:scheduleIn(4, function()
         if NetworkMgr:isConnected() then
             self:fetchLatest(false, true)
@@ -304,11 +314,11 @@ function DavidTimes:onDavidTimesFetchToday()
 end
 
 function DavidTimes:onNetworkConnected()
-    self:scheduleAutoPull()
+    pcall(function() self:scheduleAutoPull() end)
 end
 
 function DavidTimes:onResume()
-    self:scheduleAutoPull()
+    pcall(function() self:scheduleAutoPull() end)
 end
 
 function DavidTimes:addToMainMenu(menu_items)
