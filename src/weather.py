@@ -123,11 +123,20 @@ def fetch_weather(weather_cfg: dict[str, Any], timezone_name: str) -> Optional[W
         "forecast_days": 1,
     }
 
-    try:
-        resp = requests.get(url, params=params, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
+    last_exc: Optional[Exception] = None
+    for attempt in range(2):
+        try:
+            resp = requests.get(url, params=params, timeout=14)
+            resp.raise_for_status()
+            data = resp.json()
+            break
+        except Exception as exc:
+            last_exc = exc
+    else:
+        logger.warning("Weather fetch failed after retries: %s", last_exc)
+        return None
 
+    try:
         current = data["current"]
         daily = data["daily"]
         hourly = data["hourly"]
