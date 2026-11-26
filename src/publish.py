@@ -69,21 +69,29 @@ def publish_static_site(
         encoding="utf-8",
     )
 
+    def _fmt_mmddyyyy(iso_str: str) -> str:
+        try:
+            y, m, d = iso_str.split("-")
+            return f"{m}/{d}/{y}"
+        except Exception:
+            return iso_str
+
     # 2. opds.xml — OPDS 1.2 Atom catalog natively supported by KOReader!
     entries_xml = []
     for idx, issue_file in enumerate(all_issues):
         stem = issue_file.stem
         date_part = stem[:10]
+        date_slash = _fmt_mmddyyyy(date_part)
         is_today = idx == 0
         entry_title = (
-            f"{edition.title} — {date_part} (Latest)"
+            f"{edition.title} - {date_slash} (Latest)"
             if is_today
-            else f"{edition.title} — {date_part}"
+            else f"{edition.title} - {date_slash}"
         )
         summary_text = (
             f"{edition.date_display} · {page_count} pages · {edition.total_articles} articles"
             if is_today
-            else f"Archived Kindle edition from {date_part}"
+            else f"Archived Kindle edition from {date_slash}"
         )
         href = full_url(f"issues/{issue_file.name}")
         size_bytes = issue_file.stat().st_size
@@ -114,7 +122,7 @@ def publish_static_site(
 
     # 3. index.html — simple newspaper-styled archive landing page
     issue_rows = "\n".join(
-        f'<li><a href="issues/{escape(f.name)}">{escape(f.stem[:10])} — {escape(edition.title)}</a> '
+        f'<li><a href="issues/{escape(f.name)}">{escape(edition.title)} - {escape(_fmt_mmddyyyy(f.stem[:10]))}</a> '
         f'<span class="meta">({f.stat().st_size // 1024} KB)</span></li>'
         for f in all_issues
     )

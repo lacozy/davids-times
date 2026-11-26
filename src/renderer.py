@@ -292,9 +292,16 @@ def _finalize_pdf(
         if idx < len(overlay_reader.pages):
             out_page.merge_page(overlay_reader.pages[idx])
 
+    # Format date as MM/DD/YYYY (e.g. 11/26/2026) so titles sort cleanly instead of by weekday name
+    try:
+        y, m, d = edition.date_iso.split("-")
+        title_date = f"{m}/{d}/{y}"
+    except Exception:
+        title_date = edition.date_iso
+
     writer.add_metadata(
         {
-            "/Title": f"{edition.title} — {edition.date_display}",
+            "/Title": f"{edition.title} - {title_date}",
             "/Author": edition.title,
             "/Subject": f"Daily Personal Newspaper ({edition.edition_label})",
             "/Creator": "The David Times Kindle Publisher",

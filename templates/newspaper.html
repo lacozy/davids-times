@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>{{ edition.title }} — {{ edition.date_display }}</title>
+  <title>{{ edition.title }} - {{ edition.date_iso[5:7] }}/{{ edition.date_iso[8:10] }}/{{ edition.date_iso[0:4] }}</title>
   {% if fonts_css_inline %}
   <style>
 {{ fonts_css_inline | safe }}
