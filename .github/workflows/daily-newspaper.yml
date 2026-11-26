@@ -2,10 +2,11 @@ name: Daily Kindle Newspaper
 
 on:
   schedule:
-    # Off-peak minutes avoid GitHub Actions' :00/:30 cron congestion.
-    # Primary: 5:17 AM PST / 6:17 AM PDT; Backup: 5:47 AM PST / 6:47 AM PDT (skips if already built today).
-    - cron: "17 13 * * *"
-    - cron: "47 13 * * *"
+    # Three staggered off-peak morning triggers (5:13, 5:43, 6:19 AM PST / 6:13, 6:43, 7:19 AM PDT).
+    # The first run that succeeds publishes today's PDF; subsequent runs exit in ~4s via the duplicate guard.
+    - cron: '13 13 * * *'
+    - cron: '43 13 * * *'
+    - cron: '19 14 * * *'
   workflow_dispatch:
 
 permissions:
@@ -18,21 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      - name: Install Python dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-
-      - name: Install Playwright Chromium
-        run: playwright install chromium --with-deps
-
-      - name: Restore rolling 14-day archive from gh-pages (if present)
+      - name: Check archive and skip if already built today
         id: archive
         run: |
           mkdir -p dist/issues
@@ -42,11 +29,28 @@ jobs:
           fi
           TODAY_PT=$(TZ="America/Los_Angeles" date +%Y-%m-%d)
           if [ "${{ github.event_name }}" = "schedule" ] && [ -f "dist/issues/${TODAY_PT}-The-David-Times.pdf" ]; then
-            echo "Today's issue (${TODAY_PT}) is already published — skipping duplicate backup cron."
+            echo "Today's issue (${TODAY_PT}) is already published — skipping backup cron."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Set up Python 3.12
+        if: steps.archive.outputs.skip != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Python dependencies
+        if: steps.archive.outputs.skip != 'true'
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Install Playwright Chromium
+        if: steps.archive.outputs.skip != 'true'
+        run: playwright install chromium --with-deps
 
       - name: Generate The David Times PDF & OPDS catalog
         if: steps.archive.outputs.skip != 'true'
