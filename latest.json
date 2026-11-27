@@ -1,14 +1,14 @@
 {
   "title": "The David Times",
-  "date_iso": "2026-11-26",
-  "date_display": "Thursday, November 26, 2026",
+  "date_iso": "2026-11-27",
+  "date_display": "Friday, November 27, 2026",
   "volume": "I",
-  "issue_number": 3,
-  "pages": 63,
+  "issue_number": 4,
+  "pages": 50,
   "articles": 25,
-  "filename": "2026-11-26-The-David-Times.pdf",
+  "filename": "2026-11-27-The-David-Times.pdf",
   "pdf_url": "https://lacozy.github.io/davids-times/latest.pdf",
-  "archive_url": "https://lacozy.github.io/davids-times/issues/2026-11-26-The-David-Times.pdf",
-  "updated_at": "2026-11-26T16:37:49Z",
-  "size_bytes": 3823131
+  "archive_url": "https://lacozy.github.io/davids-times/issues/2026-11-27-The-David-Times.pdf",
+  "updated_at": "2026-11-27T16:19:54Z",
+  "size_bytes": 3747301
 }
