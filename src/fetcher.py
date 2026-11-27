@@ -18,6 +18,7 @@ import requests
 import trafilatura
 from bs4 import BeautifulSoup
 
+from .history import normalize_url
 from .homepages import (
     HOMEPAGE_SCRAPERS,
     fetch_cnn_lite_article_text,
@@ -578,6 +579,9 @@ def _fetch_full_article(
 def fetch_all_sections(
     config: dict[str, Any],
     now: datetime,
+    *,
+    prior_urls: Optional[set[str]] = None,
+    prior_titles: Optional[list[str]] = None,
 ) -> tuple[dict[str, list[Article]], list[FeedCandidate]]:
     """Fetch homepages & RSS feeds, score by editorial prominence + cross-outlet consensus, and hydrate full stories."""
     tz = ZoneInfo(config["paper"].get("timezone", "America/Los_Angeles"))
@@ -626,6 +630,9 @@ def fetch_all_sections(
     runner_up_candidates: list[FeedCandidate] = []
     seen_titles_global: list[str] = []
     seen_urls_global: set[str] = set()
+    hist_urls = prior_urls or set()
+    hist_titles = prior_titles or []
+    skipped_repeats = 0
 
     for sec in config["sections"]:
         sec_id = sec["id"]
@@ -634,11 +641,21 @@ def fetch_all_sections(
         raw_list = all_raw_by_section.get(sec_id, [])
 
         filtered: list[FeedCandidate] = []
+        repeat_fallbacks: list[FeedCandidate] = []
         for cand in raw_list:
             haystack = f"{cand.title} {cand.rss_summary}".lower()
             if any(m in haystack for m in mute_keywords):
                 continue
+            norm_u = normalize_url(cand.url)
+            if (norm_u and norm_u in hist_urls) or any(_are_similar_titles(cand.title, t) for t in hist_titles):
+                skipped_repeats += 1
+                repeat_fallbacks.append(cand)
+                continue
             filtered.append(cand)
+
+        # Only fall back to a repeated story if a quiet holiday feed has fewer than 2 fresh stories total
+        if len(filtered) < min(2, max_articles) and repeat_fallbacks:
+            filtered.extend(repeat_fallbacks[: max_articles - len(filtered)])
 
         # Boost stories covered by multiple major front pages!
         _apply_cross_source_consensus(filtered, consensus_headlines)
@@ -654,12 +671,13 @@ def fetch_all_sections(
         target_fetch = max_articles + 4
 
         for cand in filtered:
-            if cand.url in seen_urls_global:
+            norm_u = normalize_url(cand.url)
+            if norm_u in seen_urls_global:
                 continue
             if any(_are_similar_titles(cand.title, t) for t in seen_titles_global):
                 continue
 
-            seen_urls_global.add(cand.url)
+            seen_urls_global.add(norm_u)
             seen_titles_global.append(cand.title)
 
             if len(picked_for_sec) < target_fetch and source_counts.get(cand.source, 0) < max_per_source + 1:
@@ -670,6 +688,9 @@ def fetch_all_sections(
                 sec_runner_count += 1
 
         selected_candidates.extend(picked_for_sec)
+
+    if skipped_repeats:
+        logger.info("Filtered out %d repeat stories from prior editions.", skipped_repeats)
 
     # Step 3: Download & extract full article bodies concurrently
     hydrated_by_section: dict[str, list[Article]] = {s["id"]: [] for s in config["sections"]}

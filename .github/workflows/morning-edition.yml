@@ -26,6 +26,7 @@ jobs:
           if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
             git fetch origin gh-pages --depth=1
             git archive origin/gh-pages issues 2>/dev/null | tar -x -C dist || true
+            git show origin/gh-pages:history.json > dist/history.json 2>/dev/null || rm -f dist/history.json
           fi
           TODAY_PT=$(TZ="America/Los_Angeles" date +%Y-%m-%d)
           if [ "${{ github.event_name }}" = "schedule" ] && [ -f "dist/issues/${TODAY_PT}-The-David-Times.pdf" ]; then

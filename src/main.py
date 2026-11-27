@@ -10,6 +10,7 @@ import yaml
 
 from .briefing import assemble_edition
 from .fetcher import fetch_all_sections
+from .history import load_recent_history, save_edition_history
 from .images import hydrate_article_images
 from .markets import fetch_markets_data
 from .publish import publish_static_site
@@ -30,12 +31,19 @@ def main() -> None:
     parser.add_argument("--output", type=Path, default=Path("output/latest.pdf"), help="Output PDF path")
     parser.add_argument("--save-html", type=Path, default=None, help="Optional path to save debug HTML")
     parser.add_argument("--publish-dir", type=Path, default=None, help="Optional static site dir (GitHub Pages/OPDS)")
+    parser.add_argument("--history-file", type=Path, default=None, help="Optional path to cross-day deduplication history.json")
     parser.add_argument("--base-url", type=str, default="", help="Public base URL for OPDS/latest.json links")
     args = parser.parse_args()
 
     config = yaml.safe_load(args.config.read_text(encoding="utf-8"))
     tz_name = config.get("paper", {}).get("timezone", "America/Los_Angeles")
     now = datetime.now(ZoneInfo(tz_name))
+    today_iso = now.strftime("%Y-%m-%d")
+
+    history_path = args.history_file or (args.publish_dir / "history.json" if args.publish_dir else Path("output/history.json"))
+    prior_urls, prior_titles = load_recent_history(history_path, today_iso)
+    if prior_urls or prior_titles:
+        logger.info("Loaded cross-day dedup history: %d URLs, %d recent headlines.", len(prior_urls), len(prior_titles))
 
     logger.info("Compiling %s for %s...", config["paper"]["title"], now.strftime("%A, %B %d, %Y"))
 
@@ -52,7 +60,12 @@ def main() -> None:
         )
 
     # 2. Fetch, rank, deduplicate & extract full articles from homepages & RSS sources
-    articles_by_section, runner_ups = fetch_all_sections(config, now)
+    articles_by_section, runner_ups = fetch_all_sections(
+        config,
+        now,
+        prior_urls=prior_urls,
+        prior_titles=prior_titles,
+    )
     for sec_id, arts in articles_by_section.items():
         logger.info("Section %-15s -> %d full articles", sec_id, len(arts))
 
@@ -76,7 +89,8 @@ def main() -> None:
     size_kb = args.output.stat().st_size // 1024
     logger.info("Generated %s (%d pages, %d KB)", args.output, page_count, size_kb)
 
-    # 6. Optional GitHub Pages / OPDS / KOReader plugin bundle
+    # 6. Save updated cross-day deduplication history + publish static OPDS/archive bundle
+    save_edition_history(history_path, edition)
     if args.publish_dir:
         publish_static_site(
             pdf_path=args.output,
